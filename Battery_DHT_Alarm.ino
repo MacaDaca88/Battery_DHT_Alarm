@@ -42,7 +42,7 @@ unsigned long OldIPTime = 0;
 const long IPtime = 10000;
 const long LedTimer = 1000;
 
-int brightness;
+int brightness=0;
 
 const char *ssid = "Tip-jar";
 const char *password = "PASSWORD1234LOL";
