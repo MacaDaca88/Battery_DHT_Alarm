@@ -1,63 +1,68 @@
-#include "IP.h"
-
-#include <NTPClient.h>
-#include <ESP8266WiFi.h>
+#include <NTPClient.h>    // Clock Sync
+#include <ESP8266WiFi.h>  // ESP8266 Wifi Lib
+#include <ESP8266mDNS.h>
 #include <Hash.h>
 #include <ESPAsyncTCP.h>
-#include <ESPAsyncWebServer.h>
+#include <ESPAsyncWebServer.h>  // ESP WebServerr Lib
 #include <WiFiUdp.h>
-#include <LCD_I2C.h>
-#include <Adafruit_NeoPixel.h>
-#include <Adafruit_Sensor.h>
-#include <DHT.h>
-#include <DHT_U.h>
-#include <ArduinoOTA.h>
-#include <ESP8266mDNS.h>
+#include <LCD_I2C.h>            // I2C LIB 16x2 20x4 DotMatrix
+#include <Adafruit_NeoPixel.h>  // WS218B Led Lib
+#include <Adafruit_Sensor.h>    // Base Sensor Lib
+#include <DHT.h>                // DHT
+#include <DHT_U.h>              // Unified Dht
+#include <ArduinoOTA.h>         // Remote Upload Lib
 
 
 
-#define LED_PIN 14
-#define LED_COUNT 3
-#define BRIGHTNESS 50
+#define LED_PIN 14             // Built in Led Weemos D1 R2 Mini
+#define LED_COUNT 3            // on board leds Ws218b
+#define BRIGHTNESS_DEFAULT 20  // Default brightness for day time
+#define BRIGHTNESS_NIGHT 5     // Night led brightness settings
 
-#define BUTTON 4
-#define SIREN 0
+#define BUTTON 4  //  Button Pin
+#define SIREN 13  // Siren Pin
 
-#define DHTPIN 12
-#define DHTTYPE DHT11
+#define DHTPIN 12      // Dht Pin
+#define DHTTYPE DHT11  // Dht Type
 
-bool TempOK = false;
-bool HumidOK = false;
+bool TempOK = false;   // State to compare if Temps are Optimal
+bool HumidOK = false;  // State to compare if Humidity is Optimal
 
-float t = 0.0;
-float h = 0.0;
+float temp = 0.0;   // Float incoming Temps
+float humid = 0.0;  // Float incoming Humidity
 
 AsyncWebServer server(80);
 
-int SirenState = LOW;
-const long SirenTimer = 200;
-int ledState = LOW;
-unsigned long OldTime = 0;
-unsigned long OldIPTime = 0;
-const long IPtime = 10000;
-const long LedTimer = 1000;
+int SirenState = LOW;  // intiate siren in the off postion
+int ledState = LOW;    // intiate Led in off postion
 
-int brightness=0;
+unsigned long OldSirenTime = 0;
+unsigned long OldTime = 0;          // time hold for led blink
+unsigned long OldIPTime = 0;        // time hold for IP Info Flash to LCD
+unsigned long OldLcdClearTime = 0;  // time hold for LCD Clear
 
-const char *ssid = "Tip-jar";
-const char *password = "PASSWORD1234LOL";
+const long SirenTime = 200;      // timer for Siren to Pulse
+const long IPtime = 10000;       // how often IP Shows on LCD 10000ms
+const long LedTimer = 1000;      // Blink Led every 1000ms to count time
+const long LcdClearTime = 1000;  // delay before lcd clears
 
-char daysOfTheWeek[7][12] = { "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday" };
+int brightness = BRIGHTNESS_DEFAULT;  // intiate brightness as Default settings
 
-DHT_Unified dht(DHTPIN, DHTTYPE);
+const char *ssid = "Tip-jar";              // Your Wifi Network
+const char *password = "PASSWORD1234LOL";  //Your Password
 
-WiFiUDP ntpUDP;
+char daysOfTheWeek[7][12] = { "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday" };  // Display Day as Words
 
-NTPClient timeClient(ntpUDP, "europe.pool.ntp.org", 46800, 60000);  //43200 Winter   or 46800 Summer
-Adafruit_NeoPixel strip(LED_COUNT, LED_PIN, NEO_GRB + NEO_KHZ800);
+DHT_Unified dht(DHTPIN, DHTTYPE);  // Connecting Dht pin and type
 
-LCD_I2C lcd(0x26, 16, 2);
+WiFiUDP ntpUDP;  //????????
 
+NTPClient timeClient(ntpUDP, "europe.pool.ntp.org", 46800, 60000);  //  Clock Sync Server  Adj 43200 Winter   or 46800 Summer for DST +12GMT Auck NZ
+Adafruit_NeoPixel strip(LED_COUNT, LED_PIN, NEO_GRB + NEO_KHZ800);  // connect WS218B Pin,LedCount,Type
+
+LCD_I2C lcd(0x26, 16, 2);  // What Size Dotmatrix used 16x2 , 20,4  (SCL,SDA)
+
+// Logic For WebServer Page--------------------------------------------------------------------------------------------
 
 const char index_html[] PROGMEM = R"rawliteral(
 <!DOCTYPE HTML><html>
@@ -123,29 +128,32 @@ setInterval(function ( ) {
 </script>
 </html>)rawliteral";
 
+
+// End Of Web Page Logic-------------------------------------------------------------------------------------
+
 String processor(const String &var) {
   //Serial.println(var);
   if (var == "TEMPERATURE") {
-    return String(t);
+    return String(temp);
   } else if (var == "HUMIDITY") {
-    return String(h);
+    return String(humid);
   }
   return String();
 }
 
 void setup() {
-  Serial.begin(115200);
-  pinMode(BUTTON, INPUT);
-  pinMode(SIREN, OUTPUT);
-  pinMode(BUILTIN_LED, OUTPUT);
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(ssid, password);
+  Serial.begin(115200);          // Start Serial Moniter
+  pinMode(BUTTON, INPUT);        // Define Button as INPUT
+  pinMode(SIREN, OUTPUT);        // Define Siren as OUTPUT
+  pinMode(BUILTIN_LED, OUTPUT);  //Define Builtin_led as OUTPUT
+  WiFi.mode(WIFI_STA);           // Set Wifi Mode To Station
+  WiFi.begin(ssid, password);    // connect ssid and password
 
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
+  while (WiFi.status() != WL_CONNECTED) {  // check if  NOT connected
+    delay(500);                            // Give Life a chance to catch up
     Serial.print(".");
     lcd.setCursor(1, 0);
-    lcd.print(".");
+    lcd.print(".");  // Prints on LCD . Until Connected
   }
   // Port defaults to 8266
   // ArduinoOTA.setPort(8266);
@@ -159,7 +167,7 @@ void setup() {
   // Password can be set with it's md5 value as well
   // MD5(admin) = 21232f297a57a5a743894a0e4a801fc3
   // ArduinoOTA.setPasswordHash("21232f297a57a5a743894a0e4a801fc3");
-  ArduinoOTA.onStart([]() {
+  ArduinoOTA.onStart([]() {  // Starts wifi update
     String type;
     if (ArduinoOTA.getCommand() == U_FLASH) {
       type = "sketch";
@@ -169,25 +177,25 @@ void setup() {
     Serial.println("Start updating " + type);
     lcd.clear();
     lcd.setCursor(0, 0);
-    lcd.print("Updating");
+    lcd.print("Updating");  //Print on LCD Updating
   });
-  ArduinoOTA.onEnd([]() {
+  ArduinoOTA.onEnd([]() {  // Upload Complete
     Serial.println("\nEnd");
     lcd.clear();
     lcd.setCursor(0, 0);
-    lcd.print("End");
+    lcd.print("Up-Date Completed");  // Print on LCD End
   });
-  ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
+  ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {  // Progress during update
     Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
     lcd.clear();
     lcd.setCursor(0, 0);
-    lcd.print(progress / (total / 100));
+    lcd.print(progress / (total / 100));  // Prints on LCD The % of Upload Out of 100
   });
-  ArduinoOTA.onError([](ota_error_t error) {
+  ArduinoOTA.onError([](ota_error_t error) {  // If Upload FAILS
     Serial.printf("Error[%u]: ", error);
     lcd.clear();
     lcd.setCursor(0, 0);
-    lcd.print(error);
+    lcd.print(error);  // Print On LCD Active Error type
     if (error == OTA_AUTH_ERROR) {
       Serial.println("Auth Failed");
     } else if (error == OTA_BEGIN_ERROR) {
@@ -200,47 +208,47 @@ void setup() {
       Serial.println("End Failed");
     }
   });
-  ArduinoOTA.begin();
-  timeClient.begin();
+  ArduinoOTA.begin();  // Begin the upload
+  timeClient.begin();  // Start Clock Sync Server
   // Route for root / web page
   server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
     request->send_P(200, "text/html", index_html, processor);
   });
   server.on("/temperature", HTTP_GET, [](AsyncWebServerRequest *request) {
-    request->send_P(200, "text/plain", String(t).c_str());
+    request->send_P(200, "text/plain", String(temp).c_str());
   });
   server.on("/humidity", HTTP_GET, [](AsyncWebServerRequest *request) {
-    request->send_P(200, "text/plain", String(h).c_str());
+    request->send_P(200, "text/plain", String(humid).c_str());
   });
-  server.begin();
-  strip.begin();
-  strip.setBrightness(brightness);
-  lcd.begin();
-  lcd.backlight();
+  server.begin();            // Begin The server Active Webpage
+  strip.begin();             // Intiate the led strip
+  strip.setBrightness(255);  // Set the led strip Brightness for startup
+  lcd.begin();               // Initiate the LCD
+  lcd.backlight();           // Initate the LCD Backlight
   for (int i = 0; i < LED_COUNT; i++) {
-    strip.setPixelColor(i, strip.Color(255, 255, 0));
+    strip.setPixelColor(i, strip.Color(255, 255, 0));  //Test  Orange
   }
   strip.show();
-  delay(500);
+  delay(500);  // Give Life a chance to catch up
   for (int i = 0; i < LED_COUNT; i++) {
-    strip.setPixelColor(i, strip.Color(0, 255, 0));
+    strip.setPixelColor(i, strip.Color(0, 255, 0));  //Test Green
   }
   strip.show();
-  delay(500);
+  delay(500);  // Give Life a chance to catch up
   for (int i = 0; i < LED_COUNT; i++) {
-    strip.setPixelColor(i, strip.Color(0, 0, 255));
+    strip.setPixelColor(i, strip.Color(0, 0, 255));  //Test Blue
   }
   strip.show();
-  delay(500);
+  delay(500);  // Give Life a chance to catch up
   for (int i = 0; i < LED_COUNT; i++) {
-    strip.setPixelColor(i, strip.Color(0, 0, 0));
+    strip.setPixelColor(i, strip.Color(0, 0, 0));  // Test OFF/BLACK
   }
   strip.show();
-  delay(500);
+  delay(500);  // Give Life a chance to catch up
   digitalWrite(SIREN, HIGH);
-  delay(500);
+  delay(500);  // Give Life a chance to catch up
   digitalWrite(SIREN, LOW);
-  dht.begin();
+  dht.begin();  //Intiate DHT
   Serial.println(F("DHTxx Unified Sensor Example"));
   sensor_t sensor;
   dht.temperature().getSensor(&sensor);
@@ -281,26 +289,47 @@ void setup() {
   Serial.println(F("%"));
   Serial.println(F("------------------------------------"));
 }
+// Setup Completed --------------------------------------------------------------------
+void updateBrightness() {  // checks if time has reached to dim lights to save power
+  int hours = timeClient.getHours();
 
+  // Check if it's daytime (between 8 AM and 6 PM)
+  if (hours >= 8 && hours <= 17) {
+    brightness = BRIGHTNESS_DEFAULT;  //Day
+    strip.setBrightness(brightness);  // Set the led strip Brightness for DAY
+  } else {
+    brightness = BRIGHTNESS_NIGHT;    //Night
+    strip.setBrightness(brightness);  // Set the led strip Brightness for NIGHT
+  }
+}
 void loop() {
- int brightness = BRIGHTNESS;
+
   ArduinoOTA.handle();  // upload via wifi
-  Serial.println(WiFi.localIP());
-  unsigned long TimeIRL = millis();
+
+  Serial.println(WiFi.localIP());  // Serial prints the active IP address
+  updateBrightness();              // updates Strip Brightness to time of day
+
+  int BATT = analogRead(A0);
+  float volts = BATT * (5.00 / 1023.00);
+  Serial.print("Volts = ");
+  Serial.println(volts);
+
+  unsigned long TimeIRL = millis();  //Time
   sensors_event_t event;
   dht.temperature().getEvent(&event);
-  float temp = event.temperature - 0.0;
-  t = event.temperature;
+  temp = event.temperature;
   if (isnan(event.temperature)) {
     Serial.println(F("Error reading temperature!"));
     lcd.clear();
     lcd.setCursor(0, 0);
     lcd.print("Error reading temperature!");
+    TempOK = false;  // sets Temps As failed intiating Fail logic
     for (int i = 0; i < LED_COUNT; i++) {
       strip.setPixelColor(i, strip.Color(255, 0, 0));
     }
     strip.show();
   } else {
+    TempOK = true;  // sets temps  as in optimal range
     Serial.print(F("Temperature: "));
     Serial.print(event.temperature);
     Serial.println(F("°C"));
@@ -308,17 +337,17 @@ void loop() {
     lcd.print("T:");
     lcd.print(temp);
     lcd.print("C");
-    if (event.temperature <= 20 && event.temperature >= 0) {
+    if (temp <= 20 && temp >= 0) {
       for (int i = 0; i < LED_COUNT; i++) {  //
         strip.setPixelColor(0, strip.Color(0, 0, 255));
       }
       strip.show();
-    } else if (event.temperature <= 30 && event.temperature >= 20) {
+    } else if (temp <= 30 && temp >= 20) {
       for (int i = 0; i < LED_COUNT; i++) {
         strip.setPixelColor(0, strip.Color(0, 255, 0));
       }
       strip.show();
-    } else if (event.temperature <= 40 && event.temperature >= 30) {
+    } else if (temp <= 40 && temp >= 30) {
       for (int i = 0; i < LED_COUNT; i++) {
         strip.setPixelColor(0, strip.Color(255, 0, 0));
       }
@@ -326,12 +355,13 @@ void loop() {
     }
   }
   dht.humidity().getEvent(&event);
-  h = event.relative_humidity;
+  humid = event.relative_humidity;
   if (isnan(event.relative_humidity)) {
     Serial.println(F("Error reading humidity!"));
     lcd.clear();
     lcd.setCursor(0, 1);
     lcd.print("Error reading humidity!");
+    HumidOK = false;
     for (int i = 0; i < LED_COUNT; i++) {
       strip.setPixelColor(2, strip.Color(255, 0, 0));
     }
@@ -342,29 +372,41 @@ void loop() {
     Serial.println(F("%"));
     lcd.setCursor(11, 1);
     lcd.print("H:");
-    lcd.print(event.relative_humidity);
+    lcd.print(humid);
     lcd.print("%");
-    if (h <= 30 && h >= 0) {
+    if (humid <= 30 && humid >= 0) {
       for (int i = 0; i < LED_COUNT; i++) {
         strip.setPixelColor(2, strip.Color(255, 0, 0));  // orange
       }
       strip.show();
-    } else if (h <= 60 && h >= 30) {
+    } else if (humid <= 60 && humid >= 30) {
       for (int i = 0; i < LED_COUNT; i++) {
         strip.setPixelColor(2, strip.Color(0, 255, 0));  // green
       }
       strip.show();
-    } else if (h <= 80 && h >= 60) {
+    } else if (humid <= 80 && humid >= 60) {
       for (int i = 0; i < LED_COUNT; i++) {
         strip.setPixelColor(2, strip.Color(0, 165, 255));  // orange
       }
-      strip.show();
+      lcd.clear();
       digitalWrite(SIREN, HIGH);
-    } else if (h <= 100 && h >= 80) {
+      lcd.setCursor(0, 12);
+      lcd.print("Siren");
+      if (TimeIRL - OldSirenTime >= SirenTime) {
+        OldSirenTime = TimeIRL;
+        digitalWrite(SIREN, LOW);
+        lcd.setCursor(0, 12);
+        lcd.print("Siren pulse");
+      }
+      strip.show();
+    } else if (humid <= 100 && humid >= 80) {
+      digitalWrite(SIREN, HIGH);
       for (int i = 0; i < LED_COUNT; i++) {
         strip.setPixelColor(2, strip.Color(0, 0, 255));  // red
       }
       strip.show();
+    } else {
+      digitalWrite(SIREN, LOW);
     }
   }
 
@@ -373,8 +415,13 @@ void loop() {
     lcd.clear();
     lcd.setCursor(0, 0);
     lcd.print(WiFi.localIP());
-    lcd.setCursor(0, 12);
+    lcd.setCursor(0, 1);
     lcd.print(brightness);
+    lcd.setCursor(4, 1);
+    lcd.print("Volts =");
+    lcd.print(volts);
+    lcd.print("V");
+
     delay(1000);
   }
   if (TimeIRL - OldTime >= LedTimer) {
@@ -390,17 +437,12 @@ void loop() {
     }
     digitalWrite(BUILTIN_LED, ledState);
   }
-  timeClient.update();
+  timeClient.update();  // Update the Clock
   lcd.setCursor(0, 0);
   lcd.print(daysOfTheWeek[timeClient.getDay()]);
   lcd.setCursor(0, 1);
   int hours = timeClient.getHours();
   bool isPM = hours >= 12;
-  if (hours >= 8 && hours <= 18) {
-    brightness = 255;
-  } else {
-    brightness = BRIGHTNESS;
-  }
   if (hours > 12) {
     hours -= 12;
   }
@@ -426,6 +468,8 @@ void loop() {
   Serial.print(timeClient.getMinutes());
   Serial.print(":");
   Serial.println(timeClient.getSeconds());
-  delay(1000);
-  lcd.clear();
+  if (TimeIRL - OldLcdClearTime >= LcdClearTime) {  // Check if time to clear LCD
+    OldLcdClearTime = TimeIRL;
+    lcd.clear();
+  }
 }
