@@ -21,6 +21,8 @@
 
 #define BUTTON 4  //  Button Pin
 #define SIREN 13  // Siren Pin
+bool AlarmON = true;
+bool AlarmOFF = false;
 
 #define DHTPIN 12      // Dht Pin
 #define DHTTYPE DHT11  // Dht Type
@@ -61,6 +63,9 @@ NTPClient timeClient(ntpUDP, "europe.pool.ntp.org", 46800, 60000);  //  Clock Sy
 Adafruit_NeoPixel strip(LED_COUNT, LED_PIN, NEO_GRB + NEO_KHZ800);  // connect WS218B Pin,LedCount,Type
 
 LCD_I2C lcd(0x26, 16, 2);  // What Size Dotmatrix used 16x2 , 20,4  (SCL,SDA)
+ 
+  int hours = timeClient.getHours();
+  int minutes = timeClient.getMinutes();
 
 // Logic For WebServer Page--------------------------------------------------------------------------------------------
 
@@ -290,8 +295,8 @@ void setup() {
   Serial.println(F("------------------------------------"));
 }
 // Setup Completed --------------------------------------------------------------------
+
 void updateBrightness() {  // checks if time has reached to dim lights to save power
-  int hours = timeClient.getHours();
 
   // Check if it's daytime (between 8 AM and 6 PM)
   if (hours >= 8 && hours <= 17) {
@@ -301,13 +306,52 @@ void updateBrightness() {  // checks if time has reached to dim lights to save p
     brightness = BRIGHTNESS_NIGHT;    //Night
     strip.setBrightness(brightness);  // Set the led strip Brightness for NIGHT
   }
+  if ((hours >= 1) && (hours <= 7)) {
+    strip.setPixelColor(1, strip.Color(0, 0, 0));  // OFF
+    brightness == 0;
+    Serial.println("off");
+  }
+}
+
+void Alarm() {
+
+
+
+
+  if ((hours >= 7) && (minutes >= 30)) {
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("    Ayla and Locky  ");
+    lcd.setCursor(1, 0);
+    lcd.print("are retards :0 :P");
+
+    digitalWrite(SIREN, HIGH);
+    delay(500);
+    digitalWrite(SIREN, LOW);
+    delay(500);
+  } else if (hours >= 8) {
+    digitalWrite(SIREN, HIGH);
+    delay(200);
+    digitalWrite(SIREN, LOW);
+    delay(200);
+  } else if ((hours >= 8) && (minutes >= 30)) {
+    digitalWrite(SIREN, HIGH);
+  } else if (hours >= 11) {
+    digitalWrite(SIREN, LOW);
+  }
+  if (BUTTON == HIGH) {
+    AlarmOFF = true;
+  } else {
+    AlarmOFF = false;
+  }
 }
 void loop() {
 
   ArduinoOTA.handle();  // upload via wifi
 
   Serial.println(WiFi.localIP());  // Serial prints the active IP address
-  updateBrightness();              // updates Strip Brightness to time of day
+  Alarm();
+  updateBrightness();  // updates Strip Brightness to time of day
 
   int BATT = analogRead(A0);
   float volts = BATT * (5.00 / 1023.00);
@@ -318,6 +362,9 @@ void loop() {
   sensors_event_t event;
   dht.temperature().getEvent(&event);
   temp = event.temperature;
+
+
+
   if (isnan(event.temperature)) {
     Serial.println(F("Error reading temperature!"));
     lcd.clear();
@@ -441,8 +488,9 @@ void loop() {
   lcd.setCursor(0, 0);
   lcd.print(daysOfTheWeek[timeClient.getDay()]);
   lcd.setCursor(0, 1);
-  int hours = timeClient.getHours();
+
   bool isPM = hours >= 12;
+
   if (hours > 12) {
     hours -= 12;
   }
