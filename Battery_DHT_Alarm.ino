@@ -59,7 +59,7 @@ DHT_Unified dht(DHTPIN, DHTTYPE);  // Connecting Dht pin and type
 
 WiFiUDP ntpUDP;  //????????
 
-NTPClient timeClient(ntpUDP, "europe.pool.ntp.org", 46800, 60000);  //  Clock Sync Server  Adj 43200 Winter   or 46800 Summer for DST +12GMT Auck NZ
+NTPClient timeClient(ntpUDP, "europe.pool.ntp.org", 6800, 3600);  //  Clock Sync Server  Adj 43200 Winter   or 46800 Summer for DST +12GMT Auck NZ
 Adafruit_NeoPixel strip(LED_COUNT, LED_PIN, NEO_GRB + NEO_KHZ800);  // connect WS218B Pin,LedCount,Type
 
 LCD_I2C lcd(0x26, 16, 2);  // What Size Dotmatrix used 16x2 , 20,4  (SCL,SDA)
@@ -325,12 +325,12 @@ void Alarm() {
     lcd.setCursor(1, 0);
     lcd.print("are retards :0 :P");
 
-    digitalWrite(SIREN, HIGH);
+  //  digitalWrite(SIREN, HIGH);
     delay(500);
     digitalWrite(SIREN, LOW);
     delay(500);
   } else if (hours >= 8) {
-    digitalWrite(SIREN, HIGH);
+  //  digitalWrite(SIREN, HIGH);
     delay(200);
     digitalWrite(SIREN, LOW);
     delay(200);
